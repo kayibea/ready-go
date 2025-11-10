@@ -51,9 +51,9 @@ func main() {
 		div /= n
 	}
 
-	fmt.Printf("%-5s = %5.2f\n", "sum", sum)
-	fmt.Printf("%-5s = %5.2f\n", "sub", sub)
-	fmt.Printf("%-5s = %10.2f\n", "mul", mul)
-	fmt.Printf("%-5s = %2.2f\n", "div", div)
+	fmt.Printf("%-2s = %2f\n", "sum", sum)
+	fmt.Printf("%-2s = %2f\n", "sub", sub)
+	fmt.Printf("%-2s = %2f\n", "mul", mul)
+	fmt.Printf("%-2s = %2f\n", "div", div)
 	os.Exit(0)
 }
