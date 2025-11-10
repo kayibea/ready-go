@@ -2,122 +2,114 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
 type TextInfo struct {
-	linesEmpty uint64
+	f          *os.File
+	emptyLines uint64
 	lines      uint64
 	words      uint64
 	chars      uint64
 }
 
-func (info TextInfo) printInfos() {
-	var str string
-	var builder strings.Builder
-
-	str = fmt.Sprintf("%-20s: %d\n", "Total Line", info.lines)
-	builder.WriteString(str)
-
-	str = fmt.Sprintf("%-20s: %d\n", "Total Lines(Empty)", info.linesEmpty)
-	builder.WriteString(str)
-
-	str = fmt.Sprintf("%-20s: %d\n", "Total Words", info.words)
-	builder.WriteString(str)
-
-	str = fmt.Sprintf("%-20s: %d", "Total Chars", info.chars)
-	builder.WriteString(str)
-
-	fmt.Println(builder.String())
+func (info *TextInfo) print() {
+	fmt.Printf("%-20s: %d\n", "Total Lines", info.lines)
+	fmt.Printf("%-20s: %d\n", "Total Empty Lines", info.emptyLines)
+	fmt.Printf("%-20s: %d\n", "Total Words", info.words)
+	fmt.Printf("%-20s: %d\n", "Total Characters", info.chars)
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Printf("Usage: %s <file>\n", path.Base(os.Args[0]))
+	argc := len(os.Args) - 1
+
+	if argc < 2 {
+		fmt.Printf("Usage: %s <file> [file]...\n", path.Base(os.Args[0]))
 		os.Exit(1)
 	}
 
-	var err error
+	files := make([]*os.File, 0, argc)
+	defer closeFiles(&files)
 
-	file, err := os.Open(os.Args[1])
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+	for _, name := range os.Args[1:] {
+		file, err := os.Open(name)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+
+		files = append(files, file)
 	}
 
-	defer file.Close()
+	var wg sync.WaitGroup
+	errs := make(chan error, len(files))
+	infos := make([]TextInfo, len(files))
 
-	textInfo := TextInfo{}
+	for i, file := range files {
+		wg.Add(1)
+		infos[i].f = file
 
-	err = getTotalLines(file, &textInfo.lines, &textInfo.linesEmpty)
-	if err != nil {
-		fmt.Printf("Error: %q is not valid ASCII text file\n", path.Base(os.Args[1]))
-		os.Exit(1)
+		go func(i int, file *os.File) {
+			defer wg.Done()
+
+			err := getTextInfo(file, &infos[i])
+			if err != nil {
+				errs <- err
+			}
+		}(i, file)
 	}
 
-	if textInfo.lines == 0 {
-		textInfo.printInfos()
-		os.Exit(0)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
 	}
 
-	getTotalWords(file, &textInfo.words)
-	getTotalChars(file, &textInfo.chars)
+	sep := strings.Repeat("-", 15)
+	for _, info := range infos {
+		fmt.Printf("\nFile: %s\n%s\n", info.f.Name(), sep)
+		info.print()
+		fmt.Println()
+	}
 
-	textInfo.printInfos()
+	os.Exit(0)
 }
 
-func resetFileHead(f *os.File) {
-	f.Seek(0, io.SeekStart)
-}
-
-func getTotalChars(f *os.File, count *uint64) {
-	resetFileHead(f)
-
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanRunes)
-
-	for scanner.Scan() {
-		*count += 1
+func closeFiles(files *[]*os.File) {
+	for _, file := range *files {
+		if file != nil {
+			file.Close()
+		}
 	}
-	resetFileHead(f)
 }
 
-func getTotalWords(f *os.File, count *uint64) {
-	resetFileHead(f)
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanWords)
-
-	for scanner.Scan() {
-		*count += 1
-	}
-	resetFileHead(f)
-}
-
-func getTotalLines(f *os.File, lines *uint64, empty *uint64) error {
-	resetFileHead(f)
-
+func getTextInfo(f *os.File, info *TextInfo) error {
 	scanner := bufio.NewScanner(f)
 	scanner.Split(bufio.ScanLines)
 
 	for scanner.Scan() {
-		text := scanner.Text()
-		if !utf8.ValidString(text) {
-			return errors.New("not valid UTF-8 text")
+		line := scanner.Text()
+		if !utf8.ValidString(line) {
+			return fmt.Errorf("%q: invalid UTF-8 text file\n", f.Name())
 		}
 
-		if strings.TrimSpace(text) != "" {
-			*lines += 1
-		} else {
-			*empty += 1
+		if strings.TrimSpace(line) == "" {
+			info.emptyLines++
 		}
+
+		info.lines++
+		info.words += uint64(len(strings.Fields(line)))
+		info.chars += uint64(len(line)) + 1
 	}
 
-	resetFileHead(f)
 	return nil
 }
