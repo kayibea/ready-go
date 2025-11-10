@@ -27,18 +27,18 @@ func main() {
 		nums = append(nums, n)
 	}
 
-	sum := 0.0
-	for _, n := range nums {
+	sum := nums[0]
+	for _, n := range nums[1:] {
 		sum += n
 	}
 
 	sub := nums[0]
-	for _, n := range nums {
+	for _, n := range nums[1:] {
 		sub -= n
 	}
 
-	mul := 1.0
-	for _, n := range nums {
+	mul := nums[0]
+	for _, n := range nums[1:] {
 		mul *= n
 	}
 
